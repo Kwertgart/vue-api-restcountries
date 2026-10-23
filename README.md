@@ -1,67 +1,116 @@
-# Explorador de Países (Vue 3 + REST Countries)
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import PaisCard from './components/PaisCard.vue'
 
-Proyecto de la Unidad 3. Consume la API REST Countries con `fetch()`, guarda los datos en `ref()` y los muestra con `v-for`, `v-if`, `v-model` y `v-bind`.
+// ---------- Configuración de la API ----------
+const API_URL = 'https://api.restcountries.com/countries/v5'
+// IMPORTANTE: cambia 'rc_live_demo' por TU clave gratuita de restcountries.com
+// (la clave demo solo trae 1 país y el navegador puede bloquearla por CORS).
+const API_KEY = 'rc_live_32a68d8373c14a86a511964363f1a383'
 
-## Ejecutar en tu computadora
+// ---------- Variables reactivas (ref) ----------
+const paises = ref([])        // todos los países obtenidos
+const cargando = ref(true)    // true mientras se esperan los datos
+const error = ref('')         // mensaje si algo falla
+const detalle = ref('')       // pista de por qué falló
+const aviso = ref('')         // mensaje informativo (no es error)
+const busqueda = ref('')      // texto del campo de búsqueda (v-model)
+const regionElegida = ref('') // región elegida en el select (v-model)
 
-```bash
-npm install
-npm run dev
-```
+// ---------- Normalizar: pasa cada país al formato que usa la interfaz ----------
+function desdeV5(p) {
+  return {
+    codigo: p.codes?.alpha_3 ?? p.uuid,
+    nombre: p.names?.common ?? 'Sin nombre',
+    bandera: p.flag?.url_png ?? '',
+    capital: p.capitals?.[0]?.name ?? 'Sin capital',
+    region: p.region || 'Sin región',
+    poblacion: p.population ?? 0,
+  }
+}
 
-## Subir a GitHub (con commits durante el desarrollo)
+// ---------- Petición con fetch() ----------
+// La API entrega máximo 100 países por petición (plan gratuito),
+// así que se piden "páginas" mientras la respuesta diga que hay más.
+async function pedirPaises() {
+  const todos = []
+  let offset = 0
+  let hayMas = true
 
-1. En GitHub crea un repositorio **público** llamado `vue-api-restcountries` (sin README).
-2. En la carpeta del proyecto:
+  while (hayMas && offset < 1000) {
+    const url = `${API_URL}?limit=100&offset=${offset}&api-key=${API_KEY}&pretty=1`
+    const respuesta = await fetch(url)
+    if (!respuesta.ok) throw new Error('Error HTTP ' + respuesta.status)
 
-```bash
-git init
-git add .
-git commit -m "Proyecto base Vue 3 con Vite"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/vue-api-restcountries.git
-git push -u origin main
-```
+    const json = await respuesta.json()
+    todos.push(...json.data.objects.map(desdeV5))
 
-Haz commits separados conforme avances (ejemplos):
-`git commit -m "Agrega consumo de API con fetch en onMounted"`,
-`git commit -m "Agrega filtros con v-model"`,
-`git commit -m "Agrega estados de carga y error con v-if"`.
+    hayMas = json.data.meta?.more === true
+    offset += 100
+  }
+  return todos
+}
 
-## Publicar en GitHub Pages
+// ---------- onMounted: la primera llamada se hace aquí ----------
+onMounted(async () => {
+  try {
+    paises.value = await pedirPaises()
+    if (API_KEY === 'rc_live_demo') {
+      aviso.value = 'Estás usando la clave demo: la API solo devuelve un país de ejemplo.'
+    }
+  } catch (e) {
+    console.error(e) // el detalle técnico queda en la consola (F12)
+    error.value = 'No fue posible obtener los datos de la API'
+    detalle.value =
+      e instanceof TypeError
+        ? 'El navegador bloqueó la petición (CORS). Usa tu propia clave y agrega este dominio en restcountries.com/api-keys.'
+        : e.message
+  } finally {
+    cargando.value = false // se apaga el indicador de carga
+  }
+})
 
-```bash
-npm run deploy
-```
+// ---------- Propiedades calculadas ----------
+// Regiones únicas para llenar el <select>
+const regiones = computed(() =>
+  [...new Set(paises.value.map((p) => p.region))].sort()
+)
 
-Esto compila el proyecto y sube la carpeta `dist` a la rama `gh-pages`.
-Luego en GitHub: **Settings → Pages → Source: Deploy from a branch → Branch: `gh-pages` / (root) → Save**.
+// Países que cumplen con el texto buscado y la región elegida
+const paisesFiltrados = computed(() => {
+  const texto = busqueda.value.trim().toLowerCase()
+  return paises.value
+    .filter((p) => p.nombre.toLowerCase().includes(texto))
+    .filter((p) => !regionElegida.value || p.region === regionElegida.value)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+})
+</script>
 
-El sitio queda en: `https://TU_USUARIO.github.io/vue-api-restcountries/`
+<template>
+  <main class="contenedor">
+    <h1>Explorador de Países</h1>
 
-> Si tu repositorio tiene otro nombre, cambia `base` en `vite.config.js`.
+    <!-- Filtros: v-model enlaza cada campo con su variable -->
+    <section class="filtros">
+      <input v-model="busqueda" type="search" placeholder="Buscar país por nombre..." />
+      <select v-model="regionElegida">
+        <option value="">Todas las regiones</option>
+        <option v-for="r in regiones" :key="r" :value="r">{{ r }}</option>
+      </select>
+    </section>
 
-## Enlaces a entregar
+    <p v-if="aviso" class="aviso">{{ aviso }}</p>
 
-- Repositorio: `https://github.com/TU_USUARIO/vue-api-restcountries`
-- Sitio publicado: `https://TU_USUARIO.github.io/vue-api-restcountries/`
-- PDF de evidencias
+    <!-- v-if / v-else-if / v-else: muestra solo UN estado a la vez -->
+    <p v-if="cargando" class="estado">Cargando países...</p>
+    <p v-else-if="error" class="estado error">{{ error }}</p>
+    <p v-else-if="paisesFiltrados.length === 0" class="estado">No se encontraron países.</p>
 
-## Guion para el PDF de evidencias
+    <!-- v-for: una tarjeta por cada país -->
+    <section v-else class="rejilla">
+      <PaisCard v-for="pais in paisesFiltrados" :key="pais.codigo" :pais="pais" />
+    </section>
 
-Una página por evidencia: título + captura de la interfaz (1 por página) + captura del código (1 por página) + máximo 2 párrafos.
-Recuerda: cada captura va en su propia página, así que cada evidencia ocupa 2 páginas (interfaz y código) o más.
-
-| # | Título de la evidencia | Captura de interfaz | Captura de código |
-|---|---|---|---|
-| 1 | Repositorio en GitHub con el código fuente | Página del repo con archivos y commits | Pestaña "commits" |
-| 2 | Sitio publicado en GitHub Pages | Sitio abierto con la URL visible | `vite.config.js` (`base`) |
-| 3 | Consumo de API usando `fetch()` | Tarjeta de Canadá cargada | `pedirPrimerPais()` en `App.vue` |
-| 4 | Uso de `onMounted()` | Página recién cargada | bloque `onMounted(async () => {...})` |
-| 5 | Datos en variable reactiva `ref()` | Lista de países en pantalla | declaraciones `ref(...)` |
-| 6 | Uso de `v-for` | Cuadrícula de tarjetas | `<PaisCard v-for=...>` |
-| 7 | Uso de `v-if` (estados) | Mensaje "No se encontraron países." (busca algo inexistente) | `v-if / v-else-if / v-else` |
-| 8 | Uso de `v-model` (filtro) | Búsqueda "mex" filtrando la lista | `<input v-model="busqueda">` y `computed` |
-| 9 | Indicador de carga | "Cargando países..." (en DevTools → Network → *Slow 3G*, recarga) | `<p v-if="cargando">` |
-| 10 | Manejo de errores (opcional) | "No fue posible obtener los datos de la API" (DevTools → Network → *Offline*, recarga) | `try / catch` |
-| 11 | `v-bind` (opcional) | Bandera mostrada | `:src` y `:alt` en `PaisCard.vue` |
+    <p v-if="detalle" class="aviso">{{ detalle }}</p>
+  </main>
+</template>

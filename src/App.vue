@@ -4,21 +4,20 @@ import PaisCard from './components/PaisCard.vue'
 
 // ---------- Configuración de la API ----------
 const API_URL = 'https://api.restcountries.com/countries/v5'
-const API_KEY = 'rc_live_demo'
-// La clave demo solo regresa 1 país de ejemplo (Canadá), así que para
-// llenar la lista también se usa la versión pública de REST Countries.
-const API_LISTA = 'https://restcountries.com/v3.1/all?fields=name,flags,capital,region,population,cca3'
+// IMPORTANTE: cambia 'rc_live_demo' por TU clave gratuita de restcountries.com
+// (la clave demo solo trae 1 país y el navegador puede bloquearla por CORS).
+const API_KEY = 'rc_live_32a68d8373c14a86a511964363f1a383'
 
 // ---------- Variables reactivas (ref) ----------
-const paises = ref([])      // todos los países obtenidos
-const cargando = ref(true)  // true mientras se esperan los datos
-const error = ref('')       // mensaje si algo falla
-const aviso = ref('')       // mensaje informativo (no es error)
-const busqueda = ref('')    // texto del campo de búsqueda (v-model)
+const paises = ref([])        // todos los países obtenidos
+const cargando = ref(true)    // true mientras se esperan los datos
+const error = ref('')         // mensaje si algo falla
+const detalle = ref('')       // pista de por qué falló
+const aviso = ref('')         // mensaje informativo (no es error)
+const busqueda = ref('')      // texto del campo de búsqueda (v-model)
 const regionElegida = ref('') // región elegida en el select (v-model)
 
-// ---------- Normalizar: cada API usa nombres distintos ----------
-// Se convierte cada país a un mismo formato para la interfaz.
+// ---------- Normalizar: pasa cada país al formato que usa la interfaz ----------
 function desdeV5(p) {
   return {
     codigo: p.codes?.alpha_3 ?? p.uuid,
@@ -30,55 +29,42 @@ function desdeV5(p) {
   }
 }
 
-function desdeV3(p) {
-  return {
-    codigo: p.cca3,
-    nombre: p.name?.common ?? 'Sin nombre',
-    bandera: p.flags?.png ?? '',
-    capital: p.capital?.[0] ?? 'Sin capital',
-    region: p.region || 'Sin región',
-    poblacion: p.population ?? 0,
+// ---------- Petición con fetch() ----------
+// La API entrega máximo 100 países por petición (plan gratuito),
+// así que se piden "páginas" mientras la respuesta diga que hay más.
+async function pedirPaises() {
+  const todos = []
+  let offset = 0
+  let hayMas = true
+
+  while (hayMas && offset < 1000) {
+    const url = `${API_URL}?limit=100&offset=${offset}&api-key=${API_KEY}&pretty=1`
+    const respuesta = await fetch(url)
+    if (!respuesta.ok) throw new Error('Error HTTP ' + respuesta.status)
+
+    const json = await respuesta.json()
+    todos.push(...json.data.objects.map(desdeV5))
+
+    hayMas = json.data.meta?.more === true
+    offset += 100
   }
-}
-
-// ---------- Peticiones con fetch() ----------
-async function pedirPrimerPais() {
-  const respuesta = await fetch(`${API_URL}?q=Canada&api-key=${API_KEY}&pretty=1`)
-  if (!respuesta.ok) throw new Error('Error HTTP ' + respuesta.status)
-  const json = await respuesta.json()
-  return json.data.objects.map(desdeV5)
-}
-
-async function pedirListaCompleta() {
-  const respuesta = await fetch(API_LISTA)
-  if (!respuesta.ok) throw new Error('Error HTTP ' + respuesta.status)
-  const json = await respuesta.json()
-  return json.map(desdeV3)
+  return todos
 }
 
 // ---------- onMounted: la primera llamada se hace aquí ----------
 onMounted(async () => {
   try {
-    // 1) Primera llamada: la API indicada en la actividad
-    const lista = await pedirPrimerPais()
-
-    // 2) Completar la lista (si falla, se sigue con lo que ya hay)
-    if (lista.length < 10) {
-      try {
-        const extra = await pedirListaCompleta()
-        const porCodigo = new Map(extra.map((p) => [p.codigo, p]))
-        lista.forEach((p) => porCodigo.set(p.codigo, p)) // los de la API v5 tienen prioridad
-        paises.value = [...porCodigo.values()]
-      } catch {
-        paises.value = lista
-        aviso.value = 'Solo se pudo cargar el país de ejemplo de la API.'
-      }
-    } else {
-      paises.value = lista
+    paises.value = await pedirPaises()
+    if (API_KEY === 'rc_live_demo') {
+      aviso.value = 'Estás usando la clave demo: la API solo devuelve un país de ejemplo.'
     }
   } catch (e) {
-    // Manejo de errores (opcional en la actividad)
+    console.error(e) // el detalle técnico queda en la consola (F12)
     error.value = 'No fue posible obtener los datos de la API'
+    detalle.value =
+      e instanceof TypeError
+        ? 'El navegador bloqueó la petición (CORS). Usa tu propia clave y agrega este dominio en restcountries.com/api-keys.'
+        : e.message
   } finally {
     cargando.value = false // se apaga el indicador de carga
   }
@@ -124,5 +110,7 @@ const paisesFiltrados = computed(() => {
     <section v-else class="rejilla">
       <PaisCard v-for="pais in paisesFiltrados" :key="pais.codigo" :pais="pais" />
     </section>
+
+    <p v-if="detalle" class="aviso">{{ detalle }}</p>
   </main>
 </template>
