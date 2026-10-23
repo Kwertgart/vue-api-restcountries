@@ -2,22 +2,21 @@
 import { ref, computed, onMounted } from 'vue'
 import PaisCard from './components/PaisCard.vue'
 
-// ---------- Configuración de la API ----------
+//Configuración de la API
 const API_URL = 'https://api.restcountries.com/countries/v5'
-// IMPORTANTE: cambia 'rc_live_demo' por TU clave gratuita de restcountries.com
-// (la clave demo solo trae 1 país y el navegador puede bloquearla por CORS).
+
 const API_KEY = 'rc_live_32a68d8373c14a86a511964363f1a383'
 
-// ---------- Variables reactivas (ref) ----------
-const paises = ref([])        // todos los países obtenidos
-const cargando = ref(true)    // true mientras se esperan los datos
-const error = ref('')         // mensaje si algo falla
-const detalle = ref('')       // pista de por qué falló
-const aviso = ref('')         // mensaje informativo (no es error)
-const busqueda = ref('')      // texto del campo de búsqueda (v-model)
-const regionElegida = ref('') // región elegida en el select (v-model)
+//Variables reactivas (ref)
+const paises = ref([])        
+const cargando = ref(true)   
+const error = ref('')       
+const detalle = ref('')       
+const aviso = ref('')        
+const busqueda = ref('')     
+const regionElegida = ref('') 
 
-// ---------- Normalizar: pasa cada país al formato que usa la interfaz ----------
+//Normalizar: pasa cada país al formato que usa la interfaz
 function desdeV5(p) {
   return {
     codigo: p.codes?.alpha_3 ?? p.uuid,
@@ -29,9 +28,7 @@ function desdeV5(p) {
   }
 }
 
-// ---------- Petición con fetch() ----------
-// La API entrega máximo 100 países por petición (plan gratuito),
-// así que se piden "páginas" mientras la respuesta diga que hay más.
+//Petición con fetch()
 async function pedirPaises() {
   const todos = []
   let offset = 0
@@ -51,7 +48,7 @@ async function pedirPaises() {
   return todos
 }
 
-// ---------- onMounted: la primera llamada se hace aquí ----------
+//onMounted: la primera llamada se hace aquí
 onMounted(async () => {
   try {
     paises.value = await pedirPaises()
@@ -59,19 +56,18 @@ onMounted(async () => {
       aviso.value = 'Estás usando la clave demo: la API solo devuelve un país de ejemplo.'
     }
   } catch (e) {
-    console.error(e) // el detalle técnico queda en la consola (F12)
+    console.error(e) 
     error.value = 'No fue posible obtener los datos de la API'
     detalle.value =
       e instanceof TypeError
         ? 'El navegador bloqueó la petición (CORS). Usa tu propia clave y agrega este dominio en restcountries.com/api-keys.'
         : e.message
   } finally {
-    cargando.value = false // se apaga el indicador de carga
+    cargando.value = false 
   }
 })
 
-// ---------- Propiedades calculadas ----------
-// Regiones únicas para llenar el <select>
+//Propiedades calculadas
 const regiones = computed(() =>
   [...new Set(paises.value.map((p) => p.region))].sort()
 )
